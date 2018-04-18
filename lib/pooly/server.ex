@@ -8,7 +8,7 @@ defmodule Pooly.Server do
 
   # API
   def start_link(sup, pool_config) do
-    GenServer.start_link(__MODULE__, [sup, pool, config], name: __MODULE__)
+    GenServer.start_link(__MODULE__, [sup, pool_config], name: __MODULE__)
   end
 
   # Callbacks
@@ -30,7 +30,7 @@ defmodule Pooly.Server do
   end
 
   def init([], state) do
-    send(self, :start_worker_supervisor)
+    send(self(), :start_worker_supervisor)
     {:ok, state}
   end
 
