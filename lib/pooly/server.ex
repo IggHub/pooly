@@ -60,8 +60,15 @@ defmodule Pooly.Server do
     end
   end
 
-  def handle_cast({}, %{}) do
-
+  def handle_cast({:checkin, worker}, %{workers: workers, monitors: monitors} = state) do
+    case :ets.lookup(monitors, worker) do 
+      [{pid, ref}] ->
+        true = Process.demonitor(ref)
+	true = :ets.delete(monitors, pid)
+	{:noreply, %{state | workers: [pid | workers]}}
+      [] ->
+        {:noreply, state}
+    end
   end
 
   # helper functions
