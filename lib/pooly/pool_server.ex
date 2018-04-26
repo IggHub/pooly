@@ -3,7 +3,7 @@ defmodule Pooly.PoolServer do
   import Supervisor.Spec
 
   defmodule State do
-    defstruct pool_sup: nil, worker_sup: nil, monitors: nil, size: nil, workers: nil, name: nil, mfa: nil
+    defstruct pool_sup: nil, worker_sup: nil, monitors: nil, size: nil, workers: nil, name: nil, mfa: nil, max_overflow: nil, overflow: nil
   end
 
   def start_link(pool_sup, pool_config) do
@@ -48,6 +48,10 @@ defmodule Pooly.PoolServer do
     init(rest, %{state | size: size})
   end
 
+  def init([{max_overflow, max_overflow} | rest], state) do
+    init(rest, %{state | max_overflow: max_overflow})
+  end
+
   def init([], state) do
     send(self(), :start_worker_supervisor)
     {:ok, state}
@@ -57,15 +61,25 @@ defmodule Pooly.PoolServer do
     init(rest, state)
   end
 
-  def handle_call(:checkout, {from_pid, _ref}, %{workers: workers, monitors: monitors} = state) do
+  def handle_call({:checkout, block}, {from_pid, _ref} = from, state) do
+    %{worker_sup: worker_sup,
+      workers: workers,
+      monitors: monitors,
+      overflow: overflow,
+      max_overflow: max_overflow
+     } = state
     case workers do
       [worker|rest] ->
         ref = Process.monitor(from_pid)
         true = :ets.insert(monitors, {worker, ref})
         {:reply, worker, %{state | workers: rest}}
 
+      [] when max_overflow > 0 and overflow < max_overflow -> 
+        {worker, ref} = new_worker(worker_sup, from_pid)
+        true = :ets.insert(monitors, {worker, ref})
+        {:reply, worker, %{state | overflow: overflow + 1}}
       [] ->
-        {:reply, :noproc, state}
+        {:reply, :full, state}
     end
   end
 
@@ -78,7 +92,8 @@ defmodule Pooly.PoolServer do
       [{pid, ref}] ->
         true = Process.demonitor(ref)
         true = :ets.delete(monitors, pid)
-        {:noreply, %{state | workers: [pid|workers]}}
+        new_state = handle_checkin(pid, state)
+        {:noreply, new_state}
       [] ->
         {:noreply, state}
     end
@@ -122,6 +137,24 @@ defmodule Pooly.PoolServer do
   #####################
   # Private Functions #
   #####################
+
+  def handle_checkin(pid, state) do
+    %{worker_sup: worker_sup,
+      worker: workers,
+      monitors: monitors,
+      overflow: overflow} = state
+    if overflow > 0 do
+      :ok = dismiss_worker(worker_sup, pid)
+      %{state | waiting: empty, overflo: overflow - 1}
+    else
+      %{state | waiting: empty, workers: [pid | workers], overflow: 0}
+    end
+  end  
+
+  defp dismiss_worker(sup, pid) do
+    true = Process.unlink(pid)
+    Supervisor.terminate_child(sup, pid)
+  end
 
   defp name(pool_name) do
     :"#{pool_name}Server"
