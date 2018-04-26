@@ -84,7 +84,7 @@ defmodule Pooly.PoolServer do
   end
 
   def handle_call(:status, _from, %{workers: workers, monitors: monitors} = state) do
-    {:reply, {length(workers), :ets.info(monitors, :size)}, state}
+    {:reply, {state_name(state), length(workers), :ets.info(monitors, :size)}, state}
   end
 
   def handle_cast({:checkin, worker}, %{workers: workers, monitors: monitors} = state) do
@@ -126,9 +126,8 @@ defmodule Pooly.PoolServer do
       [{pid, ref}] ->
         true = Process.demonitor(ref)
         true = :ets.delete(monitors, pid)
-        new_state = %{state | workers: [new_worker(pool_sup)|workers]}
+        new_state = handle_worker_exit(pid, state) 
         {:noreply, new_state}
-
       _ ->
         {:noreply, state}
     end
@@ -137,6 +136,39 @@ defmodule Pooly.PoolServer do
   #####################
   # Private Functions #
   #####################
+
+  defp state_name(%State{overflow: overflow, max_overflo: max_overflow, workers: workers}) when overflow < 1 do
+    case length(workers) == 0 do
+      true ->
+        if max_overflow < 1 do
+          :full
+        else
+          :overflow
+        end
+      false ->
+        :ready
+    end
+  end
+
+  defp state_name(%State{overflow: max_overflow, max_overflow: max_overflow}) do
+    :full
+  end
+
+  defp state_name(_state) do
+    :overflow
+  end
+
+  defp handle_worker_exit(pid, state) do
+    %{worker_sup: worker_sup,
+      workers: workers,
+      monitors: monitors,
+      overflow: overflow} = state
+    if overflow > 0 do
+      %{state | overflow: overflow - 1}
+    else
+      %{state | workers: [new_worker(worker_sup) | workers]}
+    end
+  end
 
   def handle_checkin(pid, state) do
     %{worker_sup: worker_sup,
