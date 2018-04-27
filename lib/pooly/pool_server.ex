@@ -3,15 +3,15 @@ defmodule Pooly.PoolServer do
   import Supervisor.Spec
 
   defmodule State do
-    defstruct pool_sup: nil, worker_sup: nil, monitors: nil, size: nil, workers: nil, name: nil, mfa: nil, max_overflow: nil, overflow: nil
+    defstruct pool_sup: nil, worker_sup: nil, monitors: nil, size: nil, workers: nil, name: nil, mfa: nil, max_overflow: nil, overflow: nil, waiting: nil
   end
 
   def start_link(pool_sup, pool_config) do
     GenServer.start_link(__MODULE__, [pool_sup, pool_config], name: name(pool_config[:name]))
   end
 
-  def checkout(pool_name) do
-    GenServer.call(name(pool_name), :checkout)
+  def checkout(pool_name, block, timeout) do
+    GenServer.call(name(pool_name), {:checkout, block}, timeout)
   end
 
   def checkin(pool_name, worker_pid) do
@@ -33,7 +33,9 @@ defmodule Pooly.PoolServer do
   def init([pool_sup, pool_config]) when is_pid(pool_sup) do
     Process.flag(:trap_exit, true)
     monitors = :ets.new(:monitors, [:private])
-    init(pool_config, %State{pool_sup: pool_sup, monitors: monitors})
+    waiting = :queue.new
+    state = %State{pool_sup: pool_sup, monitors: monitors, waiting: waiting, overflow: 0}
+    init(pool_config, state)
   end
 
   def init([{:name, name}|rest], state) do
