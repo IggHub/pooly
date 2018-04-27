@@ -1,24 +1,25 @@
 defmodule Pooly do
   use Application
+
   @timeout 5000
 
   def start(_type, _args) do
     pools_config =
       [
         [name: "Pool1",
-          mfa: {SampleWorker, :start_link, []}, 
-          size: 2,
-          max_overflow: 3
+         mfa: {SampleWorker, :start_link, []},
+         size: 2,
+         max_overflow: 1
         ],
-        [name: "Pool2", 
-          mfa: {SampleWorker, :start_link, []}, 
-          size: 3,
-          max_overflow: 0
+        [name: "Pool2",
+         mfa: {SampleWorker, :start_link, []},
+         size: 3,
+         max_overflow: 0
         ],
-        [name: "Pool3", 
-          mfa: {SampleWorker, :start_link, []}, 
-          size: 4,
-          max_overflow: 0
+        [name: "Pool3",
+         mfa: {SampleWorker, :start_link, []},
+         size: 4,
+         max_overflow: 0
         ],
       ]
 
@@ -35,6 +36,10 @@ defmodule Pooly do
 
   def checkin(pool_name, worker_pid) do
     Pooly.Server.checkin(pool_name, worker_pid)
+  end
+
+  def transaction(pool_name, fun, timeout) do
+    Pooly.Server.transaction(pool_name, fun, timeout)
   end
 
   def status(pool_name) do
